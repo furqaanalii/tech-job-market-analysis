@@ -199,7 +199,8 @@ function extractSkills(jobs) {
   jobs.forEach(j => {
     const text = ((j.title || '') + ' ' + (j.description || '')).toLowerCase();
     SKILL_KEYWORDS.forEach(skill => {
-      if (text.includes(skill.toLowerCase())) {
+      const pattern = new RegExp('\\b' + skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+      if (pattern.test(text)) {
         counts[skill] = (counts[skill] || 0) + 1;
       }
     });

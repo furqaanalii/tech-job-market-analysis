@@ -7,8 +7,8 @@
 
 <!-- ─── REPLACE THESE WITH YOUR ADZUNA KEYS ─────────────────────────── -->
 <script>
-  const ADZUNA_APP_ID  = "9b1728a3";
-  const ADZUNA_APP_KEY = "bdf238dab15e45dfcadd2387a4cc378d";
+  const ADZUNA_APP_ID  = "YOUR_APP_ID";
+  const ADZUNA_APP_KEY = "YOUR_APP_KEY";
 </script>
 <!-- ──────────────────────────────────────────────────────────────────── -->
 
@@ -115,18 +115,11 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   <div class="filters">
     <span class="filter-label">Role</span>
     <div class="filter-group">
-<button class="filter-btn active" onclick="loadRole('data analyst',this)">Data Analyst</button>
-<button class="filter-btn" onclick="loadRole('data scientist',this)">Data Scientist</button>
-<button class="filter-btn" onclick="loadRole('data engineer',this)">Data Engineer</button>
-<button class="filter-btn" onclick="loadRole('machine learning engineer',this)">ML Engineer</button>
-<button class="filter-btn" onclick="loadRole('business intelligence analyst',this)">BI Analyst</button>
-<button class="filter-btn" onclick="loadRole('software engineer',this)">Software Engineer</button>
-<button class="filter-btn" onclick="loadRole('cloud engineer',this)">Cloud Engineer</button>
-<button class="filter-btn" onclick="loadRole('devops engineer',this)">DevOps</button>
-<button class="filter-btn" onclick="loadRole('cybersecurity analyst',this)">Cybersecurity</button>
-<button class="filter-btn" onclick="loadRole('product manager',this)">Product Manager</button>
-<button class="filter-btn" onclick="loadRole('IT analyst',this)">IT Analyst</button>
-<button class="filter-btn" onclick="loadRole('database administrator',this)">Database Admin</button>
+      <button class="filter-btn active" onclick="loadRole('data analyst',this)">Data Analyst</button>
+      <button class="filter-btn" onclick="loadRole('data scientist',this)">Data Scientist</button>
+      <button class="filter-btn" onclick="loadRole('data engineer',this)">Data Engineer</button>
+      <button class="filter-btn" onclick="loadRole('machine learning engineer',this)">ML Engineer</button>
+      <button class="filter-btn" onclick="loadRole('business intelligence analyst',this)">BI Analyst</button>
     </div>
   </div>
 
@@ -149,21 +142,31 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 
 <script>
 const SKILL_KEYWORDS = [
-  "Python","SQL","Tableau","Excel","Power BI","R","AWS","Azure","pandas",
+  "Python","SQL","Tableau","Excel","Power BI","AWS","Azure","pandas",
   "Spark","dbt","Looker","Airflow","Kafka","Scikit-learn","TensorFlow",
   "PyTorch","Docker","Kubernetes","NumPy","Git","Machine Learning","React",
-  "Java","Scala","Hadoop","Snowflake","MLflow","Statistics"
+  "Java","Scala","Hadoop","Snowflake","MLflow","Statistics","R Studio",
+  "Power Automate","SharePoint","Jira","Linux","Bash","TypeScript"
 ];
 
 const COLORS_BLUE  = ["#3b82f6","#60a5fa","#818cf8","#a78bfa","#6366f1","#38bdf8","#22d3ee","#93c5fd"];
 const COLORS_GREEN = ["#10b981","#34d399","#6ee7b7","#a7f3d0","#059669","#10b981","#34d399","#6ee7b7"];
 
+// Cache results so repeated filter clicks don't burn API calls
+const cache = {};
+
 let activeBtn = null;
 
 async function loadRole(role, btn) {
-  // Update active button
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+
+  if (cache[role]) {
+    render(role, cache[role]);
+    document.getElementById('footer-ts').textContent =
+      `Last updated: ${new Date().toLocaleString()} · ${cache[role].length} postings (cached)`;
+    return;
+  }
 
   document.getElementById('app').innerHTML = `
     <div class="loading">
@@ -172,7 +175,6 @@ async function loadRole(role, btn) {
     </div>`;
 
   try {
-    // Fetch 3 pages for more data
     const pages = await Promise.all([1,2,3].map(p =>
       fetch(`https://api.adzuna.com/v1/api/jobs/us/search/${p}?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&what=${encodeURIComponent(role)}&results_per_page=50&content-type=application/json`)
         .then(r => r.json())
@@ -181,6 +183,7 @@ async function loadRole(role, btn) {
     const jobs = pages.flatMap(p => p.results || []);
     if (!jobs.length) throw new Error("No results returned. Check your API keys.");
 
+    cache[role] = jobs;
     render(role, jobs);
     document.getElementById('footer-ts').textContent =
       `Last updated: ${new Date().toLocaleString()} · ${jobs.length} postings fetched`;
@@ -189,7 +192,7 @@ async function loadRole(role, btn) {
     document.getElementById('app').innerHTML = `
       <div class="error">
         ⚠️ Could not fetch data: ${err.message}<br>
-        <small>Make sure you've added your Adzuna APP_ID and APP_KEY at the top of this file.</small>
+        <small>Make sure your Adzuna APP_ID and APP_KEY are set at the top of this file.</small>
       </div>`;
   }
 }
@@ -199,7 +202,9 @@ function extractSkills(jobs) {
   jobs.forEach(j => {
     const text = ((j.title || '') + ' ' + (j.description || '')).toLowerCase();
     SKILL_KEYWORDS.forEach(skill => {
-      const pattern = new RegExp('\\b' + skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+      // Whole-word match only — prevents "R" matching inside words like "work", "for", "your"
+      const escaped = skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp('\\b' + escaped + '\\b');
       if (pattern.test(text)) {
         counts[skill] = (counts[skill] || 0) + 1;
       }
@@ -212,9 +217,11 @@ function extractSkills(jobs) {
 }
 
 function extractSalaries(jobs) {
+  // Filter out unrealistic values (below $20K or above $500K — likely data errors)
   const salaries = jobs
     .filter(j => j.salary_min && j.salary_max)
-    .map(j => (j.salary_min + j.salary_max) / 2);
+    .map(j => (j.salary_min + j.salary_max) / 2)
+    .filter(s => s >= 20000 && s <= 500000);
   if (!salaries.length) return null;
   return Math.round(salaries.reduce((a,b)=>a+b,0) / salaries.length);
 }
@@ -227,10 +234,10 @@ function extractCities(jobs) {
     const city = loc.split(',')[0].trim();
     if (!cityMap[city]) cityMap[city] = { total: 0, count: 0 };
     const sal = j.salary_min && j.salary_max ? (j.salary_min+j.salary_max)/2 : 0;
-    if (sal > 20000) { cityMap[city].total += sal; cityMap[city].count++; }
+    if (sal >= 20000 && sal <= 500000) { cityMap[city].total += sal; cityMap[city].count++; }
   });
   return Object.entries(cityMap)
-    .filter(([,v]) => v.count >= 2)
+    .filter(([,v]) => v.count >= 1)
     .map(([city, v]) => ({ name: city, salary: Math.round(v.total/v.count/1000) }))
     .sort((a,b) => b.salary-a.salary)
     .slice(0,7);
@@ -240,9 +247,9 @@ function render(role, jobs) {
   const skills   = extractSkills(jobs);
   const avgSal   = extractSalaries(jobs);
   const cities   = extractCities(jobs);
-  const remote   = jobs.filter(j => {
+  const remote = jobs.filter(j => {
     const t = ((j.title||'')+(j.description||'')).toLowerCase();
-    return t.includes('remote');
+    return t.includes('remote') || t.includes('work from home') || t.includes('wfh') || t.includes('telecommute');
   }).length;
   const remotePct = ((remote/jobs.length)*100).toFixed(1);
 
@@ -345,4 +352,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
- 
